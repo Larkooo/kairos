@@ -1,7 +1,7 @@
 [project]
-name = "temporal-llm"
+name = "kairos"
 version = "0.1.0"
-description = "Add your description here"
+description = "Time-aware Gemma prototype with continuous-time embeddings, temporal attention decay, and multi-timescale memory"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

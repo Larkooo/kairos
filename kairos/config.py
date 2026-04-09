@@ -1,11 +1,11 @@
-"""Config for the temporal Gemma 3 model.
+"""Config for the Kairos Gemma 3 model.
 
 Extends Gemma3TextConfig with the extra knobs our temporal modules need:
   - continuous-time positional embedding (Fourier features on log-time)
   - per-head exponential attention decay over elapsed real time
   - multi-timescale external memory bank
 
-Defaults are chosen so a freshly constructed TemporalGemmaConfig loaded on
+Defaults are chosen so a freshly constructed KairosGemmaConfig loaded on
 top of stock Gemma weights produces outputs identical to the stock model:
 temporal contributions are gated by parameters initialised near zero.
 """
@@ -15,7 +15,7 @@ from __future__ import annotations
 from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
 
 
-class TemporalGemmaConfig(Gemma3TextConfig):
+class KairosGemmaConfig(Gemma3TextConfig):
     """Gemma 3 text config with temporal extensions.
 
     Extra fields:
@@ -47,7 +47,7 @@ class TemporalGemmaConfig(Gemma3TextConfig):
                                  memory bank. Empty list disables.
     """
 
-    model_type = "temporal_gemma"
+    model_type = "kairos_gemma"
 
     def __init__(
         self,
@@ -80,3 +80,7 @@ class TemporalGemmaConfig(Gemma3TextConfig):
         self.memory_tier_sizes = tuple(memory_tier_sizes)
         self.memory_tier_decays = tuple(memory_tier_decays)
         self.memory_query_layers = tuple(memory_query_layers)
+
+
+# Backward-compatible alias for older imports.
+TemporalGemmaConfig = KairosGemmaConfig

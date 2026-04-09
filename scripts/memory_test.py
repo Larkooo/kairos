@@ -1,7 +1,7 @@
 """Unit + integration tests for the multi-timescale memory bank.
 
 Exercises the memory module in isolation (no Gemma needed) and then
-loads a full TemporalGemma with `memory_enabled=True` to verify the
+loads a full KairosGemma with `memory_enabled=True` to verify the
 memory path integrates cleanly with the transformer forward pass.
 """
 
@@ -15,8 +15,8 @@ import torch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from temporal_llm.memory_bank import MultiTimescaleMemory  # noqa: E402
-from temporal_llm.model import TemporalGemmaForCausalLM  # noqa: E402
+from kairos.memory_bank import MultiTimescaleMemory  # noqa: E402
+from kairos.model import KairosGemmaForCausalLM  # noqa: E402
 from transformers import AutoTokenizer  # noqa: E402
 
 
@@ -146,18 +146,18 @@ def test_memory_gradients_flow() -> None:
 
 
 def test_full_model_with_memory_equivalence() -> None:
-    """Loading TemporalGemma with memory_enabled=True but empty memory
+    """Loading KairosGemma with memory_enabled=True but empty memory
     and zero-init gate must match a baseline temporal model exactly."""
     print("[memory:model] running")
     device = _device()
     tok = AutoTokenizer.from_pretrained(MODEL_ID)
     dtype = torch.float32
 
-    baseline = TemporalGemmaForCausalLM.from_gemma_pretrained(
+    baseline = KairosGemmaForCausalLM.from_gemma_pretrained(
         MODEL_ID, torch_dtype=dtype, temporal_decay_init=0.0
     ).to(device).eval()
 
-    with_mem = TemporalGemmaForCausalLM.from_gemma_pretrained(
+    with_mem = KairosGemmaForCausalLM.from_gemma_pretrained(
         MODEL_ID,
         torch_dtype=dtype,
         temporal_decay_init=0.0,

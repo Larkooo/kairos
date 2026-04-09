@@ -1,4 +1,4 @@
-"""Temporal Gemma 3 causal LM.
+"""Kairos Gemma 3 causal LM.
 
 Subclasses the stock `Gemma3TextModel` / `Gemma3ForCausalLM` and wires
 in the temporal modules:
@@ -8,7 +8,7 @@ in the temporal modules:
 
 We deliberately keep the rest of Gemma's architecture untouched so that
 pretrained weights can be loaded straight from a stock Gemma checkpoint
-via `TemporalGemmaForCausalLM.from_gemma_pretrained(...)`. At init the
+via `KairosGemmaForCausalLM.from_gemma_pretrained(...)`. At init the
 temporal modules contribute approximately zero, so the wrapped model
 matches the base model's outputs until it is fine-tuned.
 
@@ -42,7 +42,7 @@ from transformers.models.gemma3.modeling_gemma3 import (
 )
 from transformers.masking_utils import create_causal_mask, create_sliding_window_causal_mask
 
-from .config import TemporalGemmaConfig
+from .config import KairosGemmaConfig
 from .memory_bank import MultiTimescaleMemory
 from .temporal_attention import TemporalDecayBias
 from .temporal_embeddings import ContinuousTimeEmbedding
@@ -86,12 +86,12 @@ def _expand_mask_for_heads(
     return mask.expand(mask.shape[0], num_heads, mask.shape[2], mask.shape[3])
 
 
-class TemporalGemmaTextModel(Gemma3TextModel):
+class KairosGemmaTextModel(Gemma3TextModel):
     """Gemma3 text model + continuous-time embedding + temporal decay."""
 
-    config_class = TemporalGemmaConfig
+    config_class = KairosGemmaConfig
 
-    def __init__(self, config: TemporalGemmaConfig):
+    def __init__(self, config: KairosGemmaConfig):
         super().__init__(config)
         self.temporal_config = config
 
@@ -278,16 +278,16 @@ class TemporalGemmaTextModel(Gemma3TextModel):
         )
 
 
-class TemporalGemmaForCausalLM(Gemma3ForCausalLM):
-    """Causal LM head on top of `TemporalGemmaTextModel`."""
+class KairosGemmaForCausalLM(Gemma3ForCausalLM):
+    """Causal LM head on top of `KairosGemmaTextModel`."""
 
-    config_class = TemporalGemmaConfig
+    config_class = KairosGemmaConfig
 
-    def __init__(self, config: TemporalGemmaConfig):
+    def __init__(self, config: KairosGemmaConfig):
         # Skip Gemma3ForCausalLM.__init__ (which instantiates Gemma3TextModel)
         # so we can substitute our temporal variant.
         super(Gemma3ForCausalLM, self).__init__(config)
-        self.model = TemporalGemmaTextModel(config)
+        self.model = KairosGemmaTextModel(config)
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.post_init()
@@ -367,18 +367,18 @@ class TemporalGemmaForCausalLM(Gemma3ForCausalLM):
         attn_implementation: str = "eager",
         torch_dtype: Optional[torch.dtype] = None,
         **kwargs,
-    ) -> "TemporalGemmaForCausalLM":
-        """Load stock Gemma 3 weights into a TemporalGemma model.
+    ) -> "KairosGemmaForCausalLM":
+        """Load stock Gemma 3 weights into a KairosGemma model.
 
         We force `attn_implementation="eager"` by default because the
         per-layer decay bias is added to the dense attention mask, which
         is straightforward in eager mode. Other backends can be wired
         later.
         """
-        # 1) Load the stock config and extend it into a TemporalGemmaConfig.
+        # 1) Load the stock config and extend it into a KairosGemmaConfig.
         base_config = Gemma3TextConfig.from_pretrained(pretrained_model_name_or_path)
         config_dict = base_config.to_dict()
-        # Strip fields that TemporalGemmaConfig adds back with its own defaults.
+        # Strip fields that KairosGemmaConfig adds back with its own defaults.
         for k in [
             "temporal_enabled",
             "temporal_time_scale",
@@ -395,7 +395,7 @@ class TemporalGemmaForCausalLM(Gemma3ForCausalLM):
             "memory_query_layers",
         ]:
             config_dict.pop(k, None)
-        temporal_config = TemporalGemmaConfig(
+        temporal_config = KairosGemmaConfig(
             temporal_enabled=temporal_enabled,
             temporal_time_scale=temporal_time_scale,
             temporal_num_frequencies=temporal_num_frequencies,
@@ -442,7 +442,7 @@ class TemporalGemmaForCausalLM(Gemma3ForCausalLM):
         if unexpected_missing:
             raise RuntimeError(
                 "Unexpected missing keys when loading Gemma weights into "
-                f"TemporalGemma: {unexpected_missing[:10]}"
+                f"KairosGemma: {unexpected_missing[:10]}"
             )
         if unexpected:
             raise RuntimeError(
@@ -452,3 +452,8 @@ class TemporalGemmaForCausalLM(Gemma3ForCausalLM):
         # Free the intermediate base model.
         del base_model
         return temporal_model
+
+
+# Backward-compatible aliases for older imports.
+TemporalGemmaTextModel = KairosGemmaTextModel
+TemporalGemmaForCausalLM = KairosGemmaForCausalLM

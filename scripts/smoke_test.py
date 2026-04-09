@@ -1,7 +1,7 @@
-"""End-to-end smoke test for TemporalGemma.
+"""End-to-end smoke test for KairosGemma.
 
 Verifies:
-  1. We can load stock Gemma 3 weights into TemporalGemmaForCausalLM.
+  1. We can load stock Gemma 3 weights into KairosGemmaForCausalLM.
   2. A forward pass produces finite logits with the right shape.
   3. With temporal modules zero-initialised, outputs match stock Gemma
      to within fp32/bf16 numerical tolerance (equivalence at init).
@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 from transformers import AutoTokenizer, Gemma3ForCausalLM  # noqa: E402
 
-from temporal_llm.model import TemporalGemmaForCausalLM  # noqa: E402
+from kairos.model import KairosGemmaForCausalLM  # noqa: E402
 
 
 MODEL_ID = "unsloth/gemma-3-270m"
@@ -55,7 +55,7 @@ def test_equivalence_at_init() -> None:
         MODEL_ID, torch_dtype=dtype, attn_implementation="eager"
     ).to(device).eval()
 
-    temporal = TemporalGemmaForCausalLM.from_gemma_pretrained(
+    temporal = KairosGemmaForCausalLM.from_gemma_pretrained(
         MODEL_ID,
         torch_dtype=dtype,
         temporal_decay_init=0.0,
@@ -90,7 +90,7 @@ def test_decay_actually_affects_outputs() -> None:
     dtype = torch.float32
     print(f"[decay-effect] device={device} dtype={dtype}")
 
-    model = TemporalGemmaForCausalLM.from_gemma_pretrained(
+    model = KairosGemmaForCausalLM.from_gemma_pretrained(
         MODEL_ID,
         torch_dtype=dtype,
         temporal_decay_init=0.0,
@@ -132,7 +132,7 @@ def test_gradients_flow() -> None:
     dtype = torch.float32
     print(f"[gradients] device={device} dtype={dtype}")
 
-    model = TemporalGemmaForCausalLM.from_gemma_pretrained(
+    model = KairosGemmaForCausalLM.from_gemma_pretrained(
         MODEL_ID,
         torch_dtype=dtype,
         temporal_decay_init=0.1,
