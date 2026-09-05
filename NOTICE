@@ -1,0 +1,9 @@
+Kairos
+Copyright (c) 2026 Nasr Djeghmoum
+
+The decoder forward path and model-loading structure in kairos/model.py adapt
+the Gemma 3 implementation from Hugging Face Transformers.
+Copyright 2025 Google Inc. HuggingFace Inc. team. All rights reserved.
+Those portions are licensed under Apache License 2.0, reproduced in
+licenses/APACHE-2.0.txt. Modifications add timestamp inputs, temporal attention
+bias, memory reads, and timestamp-aware cached generation.

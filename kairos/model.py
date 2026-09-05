@@ -1,3 +1,14 @@
+# Portions adapted from the Gemma 3 implementation in Hugging Face Transformers.
+# Copyright 2025 Google Inc. HuggingFace Inc. team. All rights reserved.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use those portions except in compliance with the License.
+# A copy is in licenses/APACHE-2.0.txt and at https://www.apache.org/licenses/LICENSE-2.0.
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the
+# specific language governing permissions and limitations under the License.
+# Modifications add timestamp inputs, temporal bias, external memory, and cache handling.
+
 """Kairos Gemma 3 causal LM.
 
 Subclasses the stock `Gemma3TextModel` / `Gemma3ForCausalLM` and wires
@@ -64,7 +75,7 @@ def _zero_init_temporal_modules(root: nn.Module) -> None:
         elif isinstance(module, TemporalDecayBias):
             nn.init.zeros_(module.gate)
         elif isinstance(module, MultiTimescaleMemory):
-            nn.init.zeros_(module.gate)
+            nn.init.ones_(module.gate)
             nn.init.zeros_(module.o_proj.weight)
 
 
@@ -92,6 +103,9 @@ class KairosGemmaTextModel(Gemma3TextModel):
     config_class = KairosGemmaConfig
 
     def __init__(self, config: KairosGemmaConfig):
+        if config._attn_implementation not in (None, "eager"):
+            raise ValueError("Kairos temporal attention currently requires the eager backend")
+        config._attn_implementation = "eager"
         super().__init__(config)
         self.temporal_config = config
 
@@ -160,9 +174,20 @@ class KairosGemmaTextModel(Gemma3TextModel):
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
 
+        use_cache = self.config.use_cache if use_cache is None else use_cache
+        current_length = inputs_embeds.shape[1]
+        past_length = past_key_values.get_seq_length() if past_key_values is not None else 0
+        if timestamps is not None:
+            expected = (inputs_embeds.shape[0], past_length + current_length)
+            if tuple(timestamps.shape) != expected:
+                raise ValueError(f"timestamps must have shape {expected}, including the cached prefix")
+            if not torch.isfinite(timestamps).all():
+                raise ValueError("timestamps must be finite")
+            timestamps = timestamps.to(inputs_embeds.device)
+
         # Add continuous-time embedding to the input embeddings.
         if self.time_embed is not None and timestamps is not None:
-            time_feats = self.time_embed(timestamps).to(dtype=inputs_embeds.dtype)
+            time_feats = self.time_embed(timestamps[:, -current_length:]).to(dtype=inputs_embeds.dtype)
             inputs_embeds = inputs_embeds + time_feats
 
         if use_cache and past_key_values is None:
@@ -243,6 +268,8 @@ class KairosGemmaTextModel(Gemma3TextModel):
                     timestamps, q_len=hidden_states.shape[1]
                 )  # (b, h, q, kv)
                 bias = bias.to(dtype=layer_mask.dtype, device=layer_mask.device)
+                # Sliding-window caches retain only the latest key positions.
+                bias = bias[..., -layer_mask.shape[-1]:]
                 expanded = _expand_mask_for_heads(layer_mask, num_heads)
                 layer_mask = expanded + bias
 
@@ -284,6 +311,9 @@ class KairosGemmaForCausalLM(Gemma3ForCausalLM):
     config_class = KairosGemmaConfig
 
     def __init__(self, config: KairosGemmaConfig):
+        if config._attn_implementation not in (None, "eager"):
+            raise ValueError("Kairos temporal attention currently requires the eager backend")
+        config._attn_implementation = "eager"
         # Skip Gemma3ForCausalLM.__init__ (which instantiates Gemma3TextModel)
         # so we can substitute our temporal variant.
         super(Gemma3ForCausalLM, self).__init__(config)
@@ -295,6 +325,21 @@ class KairosGemmaForCausalLM(Gemma3ForCausalLM):
         # zero-init projection inside ContinuousTimeEmbedding. Re-zero
         # so the temporal contribution is exactly zero at construction.
         _zero_init_temporal_modules(self)
+
+    def _update_model_kwargs_for_generation(
+        self, outputs, model_kwargs, is_encoder_decoder=False, num_new_tokens=1,
+    ):
+        updated = super()._update_model_kwargs_for_generation(
+            outputs, model_kwargs, is_encoder_decoder=is_encoder_decoder,
+            num_new_tokens=num_new_tokens,
+        )
+        timestamps = updated.get("timestamps")
+        if timestamps is not None:
+            # Generated answer tokens share the time of the final prompt token.
+            updated["timestamps"] = torch.cat(
+                [timestamps, timestamps[:, -1:].expand(-1, num_new_tokens)], dim=1
+            )
+        return updated
 
     def forward(
         self,
@@ -376,7 +421,16 @@ class KairosGemmaForCausalLM(Gemma3ForCausalLM):
         later.
         """
         # 1) Load the stock config and extend it into a KairosGemmaConfig.
-        base_config = Gemma3TextConfig.from_pretrained(pretrained_model_name_or_path)
+        if attn_implementation != "eager":
+            raise ValueError("Kairos temporal attention currently requires the eager backend")
+        config_kwargs = {
+            key: kwargs[key] for key in
+            ("cache_dir", "force_download", "local_files_only", "revision", "token", "subfolder")
+            if key in kwargs
+        }
+        base_config = Gemma3TextConfig.from_pretrained(
+            pretrained_model_name_or_path, **config_kwargs
+        )
         config_dict = base_config.to_dict()
         # Strip fields that KairosGemmaConfig adds back with its own defaults.
         for k in [

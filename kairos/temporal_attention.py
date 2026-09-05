@@ -47,6 +47,8 @@ class TemporalDecayBias(nn.Module):
         per_head: bool = True,
     ) -> None:
         super().__init__()
+        if num_heads < 1 or time_scale <= 0:
+            raise ValueError("num_heads and time_scale must be positive")
         self.num_heads = num_heads
         self.time_scale = float(time_scale)
         self.per_head = per_head

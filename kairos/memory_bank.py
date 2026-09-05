@@ -108,6 +108,15 @@ class MemoryTier(nn.Module):
         self.write_head.zero_()
         self.writes_seen.zero_()
 
+    def _apply(self, fn, recurse=True):
+        # Model dtype conversions must not quantize stored times or memories.
+        buffers = {name: getattr(self, name) for name in ("keys", "values", "timestamps")}
+        super()._apply(fn, recurse=recurse)
+        for name, original in buffers.items():
+            target = getattr(self, name)
+            setattr(self, name, original.to(device=target.device, dtype=torch.float32))
+        return self
+
     @torch.no_grad()
     def write(
         self,
@@ -192,10 +201,11 @@ class MemoryTier(nn.Module):
         dt = (current_time.to(torch.float32).unsqueeze(-1) - ts.view(1, 1, -1))
         # Only "past" entries should count; entries with dt < 0 came
         # "from the future" (shouldn't happen normally, but guard).
-        dt = dt.clamp(min=0.0)
-        scores = scores - decay_rate * dt
-
-        weights = F.softmax(scores, dim=-1)  # (batch, q, M)
+        past = dt >= 0
+        scores = (scores - decay_rate * dt.clamp(min=0.0)).masked_fill(~past, -torch.inf)
+        # A query before every stored event has no readable memory.
+        scores = torch.where(past.any(dim=-1, keepdim=True), scores, torch.zeros_like(scores))
+        weights = F.softmax(scores, dim=-1) * past.to(scores.dtype)
         retrieved = torch.einsum("bqm,md->bqd", weights, values)  # (b, q, vdim)
         return retrieved.to(queries.dtype)
 
@@ -250,9 +260,8 @@ class MultiTimescaleMemory(nn.Module):
                 raw_inits.append(_m.log(_m.expm1(d)))
         self.raw_decay = nn.Parameter(torch.tensor(raw_inits, dtype=torch.float32))
 
-        # Zero-initialised output gate so the memory contribution is 0
-        # at construction (same trick as the temporal decay bias gate).
-        self.gate = nn.Parameter(torch.zeros((), dtype=torch.float32))
+        # Zero exactly one factor so the initially silent path can still learn.
+        self.gate = nn.Parameter(torch.tensor(1.0 if zero_init_output else 0.0))
 
         if zero_init_output:
             nn.init.zeros_(self.o_proj.weight)
