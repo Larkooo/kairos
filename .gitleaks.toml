@@ -1,0 +1,7 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Transformers class identifier in an import, not an API credential"
+regexTarget = "secret"
+regexes = ['''^Gemma3ForCausalLM$''']

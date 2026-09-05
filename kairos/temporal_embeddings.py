@@ -38,6 +38,8 @@ class ContinuousTimeEmbedding(nn.Module):
         zero_init: bool = True,
     ) -> None:
         super().__init__()
+        if time_scale <= 0:
+            raise ValueError("time_scale must be positive")
         if num_frequencies < 1:
             raise ValueError("num_frequencies must be >= 1")
         if min_period <= 0 or max_period <= min_period:
@@ -92,7 +94,7 @@ class ContinuousTimeEmbedding(nn.Module):
         sin_feats = torch.sin(phases)
         cos_feats = torch.cos(phases)
         feats = torch.cat([sin_feats, cos_feats], dim=-1)  # (b, s, 2K)
-        out = self.proj(feats)  # (b, s, hidden)
+        out = self.proj(feats.to(self.proj.weight.dtype))  # (b, s, hidden)
         return out.to(dtype=self._out_dtype())
 
     def _out_dtype(self) -> torch.dtype:
